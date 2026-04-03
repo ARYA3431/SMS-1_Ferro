@@ -1,192 +1,305 @@
-﻿﻿import streamlit as st
+from pulp import *
 import pandas as pd
-import datetime
-import os
-from openpyxl import load_workbook
-import shutil
+import streamlit as st
+from pulp import LpStatus, LpStatusInfeasible
 
-# ==============================
-# BASIC SETTINGS
-# ==============================
+st.title('Ferroalloy Model with Optimal Cost')# :copyright:')
+#st.title(':blue[Ferroalloy Model with Optimal Cost]:copyright:')
+#st.subheader('Enter the target chemistry')
+#st.markdown("<h2 style='text-align: left; color: white; font-size: 18px;'>Enter the target chemistry</h2>", unsafe_allow_html=True)
+# st.subheader(':blue[Enter the target chemistry]')
 
-FILE_NAME = "Energy Sheet.xlsx"
+def model():
 
-if not os.path.exists(FILE_NAME):
-    st.error("Excel file not found!")
-    st.stop()
+    #taking cost details from sheet as Dataframe
+    cost_df = pd.read_excel('details.xlsx', sheet_name='cost', index_col=0)
 
-current_month = datetime.datetime.now().strftime("%B")
-today = datetime.datetime.now()
-today_str = today.strftime("%d-%m-%Y")
+    #taking Ferro alloy details from sheet as Dataframe
+    FA_df = pd.read_excel('details.xlsx', sheet_name='FA_details')
 
-st.title("Energy Monitoring System")
+    # set the 'Ferroalloy' column as the index
+    FA_df.set_index('Ferroalloy', inplace=True)
 
-# ==============================
-# USER INPUTS
-# ==============================
+    # Define the problem
+    prob1 = LpProblem("LP Problem", LpMinimize)
+    prob2 = LpProblem("LP Problem", LpMaximize)
 
-st.header("Enter Meter Readings")
-
-def input_grid(labels):
-    values = {}
-    for i in range(0, len(labels), 3):
-        cols = st.columns(3)
-        for j, label in enumerate(labels[i:i+3]):
-            with cols[j]:
-                values[label] = st.number_input(label, step=1.0, key=label)
-    return values
+    # Create the variables with the user-defined upper bounds
+    SiMn = LpVariable("SiMn", lowBound=0, upBound=SiMn_limit)
+    HCMn = LpVariable("HCMn", lowBound=0, upBound=HCMn_limit)
+    MCMn = LpVariable("MCMn", lowBound=0, upBound=MCMn_limit)
+    LCMn = LpVariable("LCMn", lowBound=0, upBound=LCMn_limit)
+    MtMn = LpVariable("MtMn", lowBound=0, upBound=MtMn_limit)
+    FeSi = LpVariable("FeSi", lowBound=0, upBound=FeSi_limit)
+    CPC = LpVariable("CPC", lowBound=0, upBound=CPC_limit)
 
 
-tr_labels = [
-    "TR-1 (31.5 MVA)", "TR-2 (31.5 MVA)", "TR-3 (31.5 MVA)",
-    "TR-4 (31.5 MVA)", "TR-5 (31.5 MVA)"
-]
-
-lhf_labels = ["LHF-1 (44 MVA)", "LHF-2 (44 MVA)"]
-lcp_labels = ["LCP FDR-1", "LCP FDR-3"]
-
-lcss9_labels = ["LCSS-9 FDR-1", "LCSS-9 FDR-2", "LCSS-9 FDR-3"]
-lcss8_labels = ["LCSS-8 FDR-1", "LCSS-8 FDR-2", "LCSS-8 FDR-3"]
-
-ccm_labels = ["CCM-1 EMS-1", "CCM-1 EMS-2"]
-
-fan_labels = [
-    "Primary ID Fan #1", "Primary ID Fan #2",
-    "Secondary ID Fan #1", "Secondary ID Fan #2", "Secondary ID Fan #3"
-]
-
-rcph_labels = ["RCPH I/C-1", "RCPH I/C-2"]
-
-other_labels = ["Grinder I/C Caster"]
-
-
-tr_values = input_grid(tr_labels)
-lhf_values = input_grid(lhf_labels)
-lcp_values = input_grid(lcp_labels)
-lcss9_values = input_grid(lcss9_labels)
-lcss8_values = input_grid(lcss8_labels)
-ccm_values = input_grid(ccm_labels)
-fan_values = input_grid(fan_labels)
-rcph_values = input_grid(rcph_labels)
-other_values = input_grid(other_labels)
-
-# ==============================
-# SUBMIT BUTTON
-# ==============================
-
-if st.button("Submit"):
-
-    wb = load_workbook(FILE_NAME, data_only=False)
-    ws = wb[current_month]
-
-    # FIND TODAY COLUMN
-    col_index = None
-
-    for col in range(3, ws.max_column + 1):
-        cell_value = ws.cell(row=2, column=col).value
-
-        if str(cell_value) == today_str:
-            col_index = col
-            break
-
-    if col_index is None:
-        col_index = ws.max_column + 1
-        ws.cell(row=2, column=col_index).value = today_str
-
-    # UPDATE FUNCTION
-    def update_excel(name, value):
-        for row in range(4, ws.max_row + 1):
-            cell_name = ws.cell(row=row, column=2).value
-
-        # 🚫 Skip formula rows
-            if "TOTAL" in str(cell_name).upper():
-                continue
-
-            if cell_name == name:
-                ws.cell(row=row, column=col_index).value = int(value)
-                return
-            
-    # CALCULATIONS
-    total_consumption = sum(tr_values.values())
-    total_lf = sum(lhf_values.values())
-    total_lcp = sum(lcp_values.values())
-    total_lcss9 = sum(lcss9_values.values())
-    total_lcss8 = sum(lcss8_values.values())
-    total_caster = total_lcss8 + total_lcss9
-    total_rcph = sum(rcph_values.values())
-    total_id_fan = sum(fan_values.values())
-    total_bof = total_consumption - total_caster
-
-    # UPDATE VALUES
-    update_excel("TR-1 (31.5 MVA)", tr_values["TR-1 (31.5 MVA)"])
-    update_excel("TR-2 (31.5 MVA)", tr_values["TR-2 (31.5 MVA)"])
-    update_excel("TR-3 (31.5 MVA)", tr_values["TR-3 (31.5 MVA)"])
-    update_excel("TR-4 (31.5 MVA)", tr_values["TR-4 (31.5 MVA)"])
-    update_excel("TR-5 (31.5 MVA)", tr_values["TR-5 (31.5 MVA)"])
-
-    # SAVE
-    # Force Excel to recalculate formulas when opened
-    wb.calculation.fullCalcOnLoad = True
-
-    wb.save(FILE_NAME)
-
-    # READ DATA
-    df = pd.read_excel(FILE_NAME, sheet_name=current_month, header=1, dtype=object)
-    wb_data = load_workbook(FILE_NAME, data_only=True)
-    ws_data = wb_data[current_month]
-
-    data = list(ws_data.values)
-    df = pd.DataFrame(data[1:], columns=data[1])
-
-    # FIX COLUMN NAMES
-    new_cols = list(df.columns[:2])
-    for col in df.columns[2:]:
-        try:
-            new_col = pd.to_datetime(col).strftime("%d-%m-%Y")
-        except:
-            new_col = col
-        new_cols.append(new_col)
-
-    df.columns = new_cols
-
-    # CONVERT VALUES
-   # Convert values safely
-    for col in df.columns[2:]:
-        df[col] = pd.to_numeric(df[col], errors='coerce').round(0)
-
-    # Replace NaN with blank ONLY FOR DISPLAY
-    df_display = df.fillna("")
-
-    st.subheader("📊 Full Energy Data (Live)")
-    st.dataframe(df_display, use_container_width=True)
-
-if os.path.exists(FILE_NAME):
-
-    # Show existing data
-    df = pd.read_excel(FILE_NAME, sheet_name=current_month, header=1, dtype=object)
-
-    # Convert numbers safely
-    # Convert values to numeric
-    for col in df.columns[2:]:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    # ✅ REMOVE DECIMALS (SAFE)
-    df_display = df.copy()
-
-    for col in df_display.columns[2:]:
-        df_display[col] = df_display[col].apply(
-            lambda x: int(x) if pd.notnull(x) else ""
-        )
-
-    # Remove None
-    df_display = df_display.fillna("")
-    st.subheader("📊 Existing Data")
-    st.dataframe(df_display, use_container_width=True)
+    # Define the objective function
+    prob1 += cost_df.loc["SiMn", "COST"] * SiMn + \
+        cost_df.loc["HCMn", "COST"] * HCMn + \
+        cost_df.loc["MCMn", "COST"] * MCMn + \
+        cost_df.loc["LCMn", "COST"] * LCMn + \
+        cost_df.loc["FeSi", "COST"] * FeSi + \
+        cost_df.loc["MtMn", "COST"] * MtMn + \
+        cost_df.loc["CPC", "COST"] * CPC
     
-    # Download button
-    with open(FILE_NAME, "rb") as file:
-        st.download_button(
-            label="📥 Download Updated Excel",
-            data=file,
-            file_name="Energy Sheet.xlsx"
-        )
+      #'''Define the constraints for each elements in ferroalloy'''
+
+        # weight*recovery/100 of C in each ferro alloy
+    prob1 += FA_df.loc['SiMn', 'C']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','C']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'C']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'C']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'C']*FeSi1*FeSi  + \
+        FA_df.loc['MtMn', 'C']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'C']*CPC1*CPC == (filtered_df['c_aim'].iloc[0] - Carbon) * Tap_Weight * 10
+
+# weight*recovery/100 of Si in each ferro alloy  
+    prob1 += FA_df.loc['SiMn', 'Si']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','Si']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'Si']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'Si']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'Si']*FeSi1*FeSi + \
+        FA_df.loc['MtMn', 'Si']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'Si']*CPC1*CPC  == (filtered_df['si_aim'].iloc[0] - Silicon) * Tap_Weight * 10
+
+# weight*recovery/100 of Mn in each ferro alloy 
+    prob1 += FA_df.loc['SiMn', 'Mn']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','Mn']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'Mn']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'Mn']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'Mn']*FeSi1*FeSi  + \
+        FA_df.loc['MtMn', 'Mn']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'Mn']*CPC1*CPC == (filtered_df['mn_aim'].iloc[0]- Manganese) * Tap_Weight * 10
+
+ #weight*recovery/100 of P in each ferro alloy
+    prob1 += FA_df.loc['SiMn', 'P']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','P']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'P']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'P']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'P']*FeSi1*FeSi  + \
+        FA_df.loc['MtMn', 'P']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'P']*CPC1*CPC <= (filtered_df['p_aim'].iloc[0]- Phosphorus) * Tap_Weight * 10
+    
+# weight*recovery/100 of S in each ferro alloy0
+    prob1 += FA_df.loc['SiMn', 'S']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','S']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'S']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'S']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'S']*FeSi1*FeSi  + \
+        FA_df.loc['MtMn', 'S']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'S']*CPC1*CPC <= (filtered_df['s_aim'].iloc[0] - Sulphur) * Tap_Weight * 10
+    
+    prob1.solve()
+
+# Print the results
+    # if prob1.status == LpStatusInfeasible:
+    #     infeasible_reasons = []
+    #     for constraint in prob1.constraints.values():
+    #         if not constraint.valid():
+    #             infeasible_reasons.append(constraint.name)
+    #     st.write("Status: Infeasible")
+    #     st.write("Infeasible reasons:") 
+    #     for reason in infeasible_reasons:
+    #         st.write(reason)
+    # else:
+    #     st.write("Status:", LpStatus[prob1.status])
+
+    st.write("Status: ", LpStatus[prob1.status] )
+    st.write("Minimum cost = ", round(value(prob1.objective),0)) #, 'Thank You ! for saving Money :sparkling_heart:')
+    st.write("SiMn = ", value(SiMn.varValue),"kg")
+    st.write("HCMn = ", value(HCMn.varValue),"kg")
+    st.write("MCMn = ", value(MCMn.varValue),"kg")
+    st.write("LCMn = ", value(LCMn.varValue),"kg")
+    st.write("FeSi = ", value(FeSi.varValue),"kg")
+    st.write("CPC = ", value(CPC.varValue),"kg")
+    st.write("MtMn = ", value(MtMn.varValue),"kg")  
+
+############################## this is all for maximum   ###########################
+
+    # Define the objective function
+    prob2 += cost_df.loc["SiMn", "COST"] * SiMn + \
+        cost_df.loc["HCMn", "COST"] * HCMn + \
+        cost_df.loc["MCMn", "COST"] * MCMn + \
+        cost_df.loc["LCMn", "COST"] * LCMn + \
+        cost_df.loc["FeSi", "COST"] * FeSi + \
+        cost_df.loc["MtMn", "COST"] * MtMn + \
+        cost_df.loc["CPC", "COST"] * CPC
+    
+      #'''Define the constraints for each elements in ferroalloy'''
+
+        # weight*recovery/100 of C in each ferro alloy
+    prob2 += FA_df.loc['SiMn', 'C']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','C']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'C']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'C']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'C']*FeSi1*FeSi  + \
+        FA_df.loc['MtMn', 'C']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'C']*CPC1*CPC == (filtered_df['c_aim'].iloc[0] - Carbon) * Tap_Weight * 10
+
+# weight*recovery/100 of Si in each ferro alloy  
+    prob2 += FA_df.loc['SiMn', 'Si']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','Si']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'Si']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'Si']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'Si']*FeSi1*FeSi + \
+        FA_df.loc['MtMn', 'Si']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'Si']*CPC1*CPC  == (filtered_df['si_aim'].iloc[0] - Silicon) * Tap_Weight * 10
+
+# weight*recovery/100 of Mn in each ferro alloy 
+    prob2 += FA_df.loc['SiMn', 'Mn']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','Mn']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'Mn']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'Mn']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'Mn']*FeSi1*FeSi  + \
+        FA_df.loc['MtMn', 'Mn']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'Mn']*CPC1*CPC == (filtered_df['mn_aim'].iloc[0] - Manganese) * Tap_Weight * 10
+
+ #weight*recovery/100 of P in each ferro alloy
+    prob2 += FA_df.loc['SiMn', 'P']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','P']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'P']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'P']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'P']*FeSi1*FeSi  + \
+        FA_df.loc['MtMn', 'P']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'P']*CPC1*CPC <= (filtered_df['p_aim'].iloc[0] - Phosphorus) * Tap_Weight * 10
+    
+# weight*recovery/100 of S in each ferro alloy0
+    prob2 += FA_df.loc['SiMn', 'S']*SiMn1*SiMn + \
+        FA_df.loc['HCMn','S']*HCMn1*HCMn + \
+        FA_df.loc['MCMn', 'S']*MCMn1*MCMn + \
+        FA_df.loc['LCMn', 'S']*LCMn1*LCMn + \
+        FA_df.loc['FeSi', 'S']*FeSi1*FeSi  + \
+        FA_df.loc['MtMn', 'S']*MtMn1*MtMn + \
+        FA_df.loc['CPC', 'S']*CPC1*CPC <= (filtered_df['s_aim'].iloc[0] - Sulphur) * Tap_Weight * 10
+    
+    status = prob2.solve()
+
+# contraint for reason
+    # if prob2.status == LpStatusInfeasible:
+    #     infeasible_reasons = []
+    #     for constraint in prob2.constraints.values():
+    #         if not constraint.valid():
+    #             infeasible_reasons.append(constraint.name)
+    #     st.write("Status: Infeasible")
+    #     st.write("Infeasible reasons:") 
+    #     for reason in infeasible_reasons:
+    #         st.write(reason)
+    # else:
+    #     st.write("Status:", LpStatus[prob2.status])
+# Print the results
+    st.write("Status: ", LpStatus[prob1.status] )
+    st.write("Maximum cost = ", round(value(prob1.objective),0)) #, 'Thank You ! for saving Money :sparkling_heart:')
+    st.write("SiMn = ", value(SiMn.varValue),"kg")
+    st.write("HCMn = ", value(HCMn.varValue),"kg")
+    st.write("MCMn = ", value(MCMn.varValue),"kg")
+    st.write("LCMn = ", value(LCMn.varValue),"kg")
+    st.write("FeSi = ", value(FeSi.varValue),"kg")
+    st.write("CPC = ", value(CPC.varValue),"kg")
+    st.write("MtMn = ", value(MtMn.varValue),"kg") 
+    # if status == pulp.LpStatusInfeasible:
+    #     st.write('The problem is infeasible. The following contrain is not satisfied:')
+    #     for constraint in prob2.constraints:
+    #         if constraint.status == pulp.LpConstraintNotSatisfied:
+    #             st.write(constraint.name)
+
+# Create a column for each elements
+container = st.container()
+with st.container():
+   df = pd.read_excel("grade.xlsx")
+
+df['Dolvi grades'] = df['Dolvi grades'].str.upper()
+
+grade = st.selectbox('Select Grade', df['Dolvi grades'].unique())
+filtered_df = df[df['Dolvi grades'].str.upper() == grade.upper()]
+
+# all the conditions which causes infeasible result
+if filtered_df['si_aim'].iloc[0] == 0:
+    # fix simn zero
+    filtered_df.loc[filtered_df.index[0], 'si_aim'] = 0.009
+else:
+    filtered_df.loc[filtered_df.index[0], 'si_aim'] = filtered_df['si_aim'].iloc[0]
+
+
+min_max_df = pd.DataFrame({
+    'Elements': ['Min', 'Max', 'Aim'],
+    'C': [filtered_df['c_min'].iloc[0], filtered_df['c_max'].iloc[0], filtered_df['c_aim'].iloc[0]],
+    'Mn': [filtered_df['mn_min'].iloc[0], filtered_df['mn_max'].iloc[0], filtered_df['mn_aim'].iloc[0]],
+    'S': [filtered_df['s_min'].iloc[0], filtered_df['s_max'].iloc[0], filtered_df['s_aim'].iloc[0]],
+    'P': [filtered_df['p_min'].iloc[0], filtered_df['p_max'].iloc[0], filtered_df['p_aim'].iloc[0]],
+    'Si': [filtered_df['si_min'].iloc[0], filtered_df['si_max'].iloc[0], filtered_df['si_aim'].iloc[0]],
+    'Al': [filtered_df['al_min'].iloc[0], filtered_df['al_max'].iloc[0], filtered_df['al_aim'].iloc[0]],
+    'Cr': [filtered_df['cr_min'].iloc[0], filtered_df['cr_max'].iloc[0], filtered_df['cr_aim'].iloc[0]],
+    'Cu': [filtered_df['cu_min'].iloc[0], filtered_df['cu_max'].iloc[0], filtered_df['cu_aim'].iloc[0]],
+    'V': [filtered_df['v_min'].iloc[0], filtered_df['v_max'].iloc[0], filtered_df['v_aim'].iloc[0]],
+    'Ti': [filtered_df['ti_min'].iloc[0], filtered_df['ti_max'].iloc[0], filtered_df['ti_aim'].iloc[0]],
+    'Nb': [filtered_df['nb_min'].iloc[0], filtered_df['nb_max'].iloc[0], filtered_df['nb_aim'].iloc[0]],
+    'Mo': [filtered_df['mo_min'].iloc[0], filtered_df['mo_max'].iloc[0], filtered_df['mo_aim'].iloc[0]],
+    'B': [filtered_df['b_min'].iloc[0], filtered_df['b_max'].iloc[0], filtered_df['b_aim'].iloc[0]],
+    'Ca': [filtered_df['ca_min'].iloc[0], filtered_df['ca_max'].iloc[0], filtered_df['ca_aim'].iloc[0]]
+})
+
+st.write(min_max_df[['Elements', 'C', 'Mn', 'S', 'P', 'Si', 'Al', 'Cr', 'Cu', 'V', 'Ti', 'Nb', 'Mo', 'B', 'Ca']])
+
+st.markdown("<h2 style='text-align: left; color: white; font-size: 15px;'>Enter the blow end chemistry</h2>", unsafe_allow_html=True)
+
+container = st.container()
+
+col1, col2, col3 = container.columns(3)
+
+Carbon = col1.number_input("C", format="%.3f")
+Manganese = col2.number_input("Mn", format="%.3f")
+Sulphur = col3.number_input("S", format="%.3f")
+
+col4, col5, col6 = container.columns(3)
+
+Phosphorus = col4.number_input("P", format="%.3f")
+Silicon = col5.number_input("Si", format="%.3f")
+Tap_Weight = col6.number_input("Tap_Weight", value=350)
+
+
+if Carbon >= filtered_df['c_aim'].iloc[0]:
+    filtered_df.loc[filtered_df.index[0], 'c_aim'] = filtered_df['c_max'].iloc[0]
+    filtered_df.loc[filtered_df.index[0], 'c_max'] = filtered_df['c_aim'].iloc[0]
+
+
+# sidebar function
+with st.sidebar:
+    st.subheader("Availibility of bunkers:")
+
+    col1, col2 = st.columns(2)
+
+    col1.write("Materials")
+    SiMn1 = col1.number_input("SiMn1", min_value=0.0, max_value=1.0, value=1.0, step=1.0)
+    HCMn1 = col1.number_input("HCMn1", min_value=0.0, max_value=1.0, value=1.0, step=1.0)
+    MCMn1 = col1.number_input("MCMn1", min_value=0.0, max_value=1.0, value=1.0, step=1.0)
+    LCMn1 = col1.number_input("LCMn1", min_value=0.0, max_value=1.0, value=1.0, step=1.0)
+    MtMn1 = col1.number_input("MtMn1", min_value=0.0, max_value=1.0, value=1.0, step=1.0)
+    FeSi1 = col1.number_input("FeSi1", min_value=0.0, max_value=1.0, value=1.0, step=1.0)
+    CPC1 = col1.number_input("CPC1", min_value=0.0, max_value=1.0, value=1.0, step=1.0)
+
+    col2.write("Limit")
+    SiMn_limit = col2.number_input("SiMn_Limit", value=9999)
+    HCMn_limit = col2.number_input("HCMn_Limit", value=9999)
+    MCMn_limit = col2.number_input("MCMn_Limit", value=9999)
+    LCMn_limit = col2.number_input("LCMn_Limit", value=9999)
+    MtMn_limit = col2.number_input("MtMn_Limit", value=9999)
+    FeSi_limit = col2.number_input("FeSi_Limit", value=9999)
+    CPC_limit = col2.number_input("CPC_Limit", value=9999)
+
+    if SiMn1 == 0:
+        SiMn_limit = 0
+    if HCMn1 == 0:
+        HCMn_limit = 0
+    if MCMn1 == 0:
+        MCMn_limit = 0
+    if LCMn1 == 0:
+        LCMn_limit = 0
+    if MtMn1 == 0:
+        MtMn_limit = 0
+    if CPC1 == 0:
+        CPC_limit = 0
+
+
+if st.button("Predict"):
+    model()
