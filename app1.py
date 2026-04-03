@@ -208,10 +208,14 @@ container = st.container()
 with st.container():
    df = pd.read_excel("grade.xlsx")
 
-df['Dolvi grades'] = df['Dolvi grades'].str.upper()
+df.columns = df.columns.str.strip().str.lower()
 
-grade = st.selectbox('Select Grade', df['Dolvi grades'].unique())
-filtered_df = df[df['Dolvi grades'].str.upper() == grade.upper()]
+# use lowercase everywhere
+df['dolvi grades'] = df['dolvi grades'].astype(str).str.upper()
+
+grade = st.selectbox('Select Grade', df['dolvi grades'].unique())
+
+filtered_df = df[df['dolvi grades'] == grade.upper()]
 
 # all the conditions which causes infeasible result
 if filtered_df['si_aim'].iloc[0] == 0:
