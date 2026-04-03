@@ -208,6 +208,8 @@ container = st.container()
 with st.container():
    df = pd.read_excel("grade.xlsx")
 
+st.write("Raw Columns:", list(df.columns))
+
 df.columns = df.columns.str.strip().str.lower()
 
 # use lowercase everywhere
